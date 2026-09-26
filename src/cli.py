@@ -16,6 +16,7 @@ from .config import Settings
 from .errors import TerminusError
 from .llm import LocalModelClient
 from .tools import build_default_registry
+from .server import Server
 
 app = typer.Typer(
     add_completion=False,
@@ -39,9 +40,9 @@ def _version_callback(value: bool) -> bool:
 @app.command()
 def run(
     task: Annotated[
-        list[str],
+        list[str] | None,
         typer.Argument(help="The natural-language Windows request."),
-    ],
+    ] = None,
     base_url: Annotated[
         str | None,
         typer.Option("--base-url", help="OpenAI-compatible llama-server base URL."),
@@ -82,6 +83,18 @@ def run(
         bool,
         typer.Option("--assistant", "-a", help="Use for just chatting directly with the model"),
     ] = False,
+    start_serving: Annotated[
+            bool,
+            typer.Option("--serving", "-s", help="Use when you need to send multiple queries"),
+        ] = False,
+    stop_serving: Annotated[
+            bool,
+            typer.Option("--stop", help="Use when you need to stop the model running"),
+        ] = False,
+    image_gen: Annotated[
+            bool,
+            typer.Option("--img", "-i", help="Use when you need img generation"),
+        ] = False,
     debug: Annotated[
         bool,
         typer.Option(
@@ -103,10 +116,52 @@ def run(
         ),
     ] = False,
 ) -> None:
-    request = " ".join(task).strip()
+    request = " ".join(task or []).strip()
     output = Console()
     progress = Console(stderr=True)
     try:
+        if start_serving and stop_serving:
+            raise ValueError(
+                "--start-serving and --stop-serving cannot be used together."
+            )
+
+        model_server = Server('11434')
+
+        if start_serving:
+            with progress.status(
+                "[cyan]Starting model server…[/cyan]",
+                spinner="dots",
+            ):
+                started = model_server.start_model_server()
+
+            if started:
+                progress.print(
+                    "[green]Model server started on port 11434.[/green]"
+                )
+            else:
+                progress.print(
+                    "[yellow]A model is already running on port 11434.[/yellow]"
+                )
+
+            return
+
+        if stop_serving:
+            if model_server.stop_model_server():
+                progress.print("[green]Model server stopped.[/green]")
+            else:
+                progress.print(
+                    "[yellow]No managed model server was found.[/yellow]"
+                )
+
+            return
+
+
+        if not request:
+            raise ValueError(
+                "Provide a question or use "
+                "--start-serving/--stop-serving."
+            )
+
         settings = Settings.from_env(
             base_url=base_url,
             model=model,
@@ -118,13 +173,18 @@ def run(
             verbose=True if verbose else None,
             debug=True if debug else None,
         )
-        registry = build_default_registry(settings.max_observation_chars)
+
+        registry = build_default_registry(
+            settings.max_observation_chars
+        )
+
         with LocalModelClient(settings) as client:
             agent = ReactAgent(
                 settings=settings,
                 model=client,
                 tools=registry,
             )
+
             status_message = (
                 "[cyan]Thinking…[/cyan]"
                 if assistant
@@ -132,7 +192,11 @@ def run(
             )
 
             with progress.status(status_message, spinner="dots"):
-                result = agent.run(request, assistant_mode=assistant)
+                result = agent.run(
+                    request,
+                    assistant_mode=assistant,
+                    image_mode=image_gen,
+                )
     except (TerminusError, ValueError) as exc:
         progress.print(f"[red]Terminus stopped:[/red] {exc}")
         raise typer.Exit(code=1) from exc

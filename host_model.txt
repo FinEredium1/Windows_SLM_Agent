@@ -1,9 +1,17 @@
-First host your local model using:
 llama-server `
-  -m "<model_path>" `
+  -m "Ornith-1.5-9B-O-Q4_K_M.gguf" `
   -ngl 999 `
   -c 8192 `
   --host 127.0.0.1 `
-  --port 11434`
-  --alias gemma-4-e4b `
-  --jinja
+  --port 11434 `
+  --alias ornith `
+  --jinja `
+  --reasoning-format none `
+  --repeat-penalty 1.15 `
+  --repeat-last-n 512 `
+  --reasoning-budget 0
+  --temp 0 `
+  --dry-multiplier 0.8 `
+  --dry-base 1.75 `
+  --dry-allowed-length 2
+

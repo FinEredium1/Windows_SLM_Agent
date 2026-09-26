@@ -13,7 +13,7 @@ from .cards import CommandCard, CommandCardCatalog, get_default_catalog
 from .config import Settings
 from .errors import AgentExhaustedError, ModelError, is_retryable_model_error
 from .models import AgentResult, ModelResponse, ModelUsage, TraceEntry, ToolCall
-from .prompts import SYSTEM_PROMPT, build_user_message, observation_message, ASSISTANT_PROMPT
+from .prompts import SYSTEM_PROMPT, build_user_message, observation_message, ASSISTANT_PROMPT, IMAGE_GEN_PROMPT
 from .proposals import (
     FinishArguments,
     ProposeCommandArguments,
@@ -64,14 +64,15 @@ class ReactAgent:
         task: str,
         *,
         assistant_mode: bool = False,
+        image_mode: bool = False,
         on_token: Callable[[str], None] | None = None,
         runtime_context: str | None = None,
     ) -> AgentResult:
         task = task.strip()
         if not task:
             raise ValueError("The operator request cannot be empty.")
-        if assistant_mode:
-            return self._run_assistant(task, on_token=on_token)
+        if assistant_mode or image_mode:
+            return self._configure_modes(task, assistant_mode, image_mode, on_token=on_token)
 
         card_hits = self.cards.search(
             task,
@@ -98,11 +99,12 @@ class ReactAgent:
         trace: list[TraceEntry] = []
         usage = ModelUsage()
         consecutive_errors = 0
-
+        NORMAL_TEMPERATURE = 0
         for step in range(1, self.settings.max_steps + 1):
             try:
                 response = self.model.complete(
                     messages,
+                    NORMAL_TEMPERATURE,
                     schemas,
                     stream=self.settings.stream,
                     on_token=on_token,
@@ -211,25 +213,35 @@ class ReactAgent:
             "without a final answer."
         )
 
-    def _run_assistant(
+    def _configure_modes(
         self,
         task: str,
+        assistant_mode: bool,
+        image_mode: bool,
         *,
         on_token: Callable[[str], None] | None = None,
     ) -> AgentResult:
+        prompt = ""
+
+        if assistant_mode:
+            prompt = ASSISTANT_PROMPT
+        if image_mode:
+            prompt = IMAGE_GEN_PROMPT
+
         messages: list[dict[str, Any]] = [
             {
                 "role": "system",
-                "content": ASSISTANT_PROMPT,
+                "content": prompt,
             },
             {
                 "role": "user",
                 "content": task,
             },
         ]
-
+        mode_temp = 0.1 if image_mode else 0
         response = self.model.complete(
             messages,
+            mode_temp,
             [],
             stream=self.settings.stream,
             on_token=on_token,
@@ -237,7 +249,7 @@ class ReactAgent:
 
         if response.tool_calls:
             raise ModelError(
-                "The model returned a tool call while running in assistant mode."
+                "The model returned a tool call while running in assistant or image mode."
             )
 
         answer = response.content.strip()

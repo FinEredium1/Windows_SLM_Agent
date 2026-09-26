@@ -23,7 +23,7 @@ dev = [
 ]
 
 [project.scripts]
-terminus = "terminus_agent.cli:main"
+slm = "terminus_agent.cli:main"
 terminus-ssh = "terminus_agent.remote_executor:main"
 terminus-agent-host = "terminus_agent.remote_host:main"
 

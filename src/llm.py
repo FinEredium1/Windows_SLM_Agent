@@ -12,7 +12,6 @@ import httpx
 from .config import Settings
 from .errors import ModelError
 from .models import ModelResponse, ModelUsage, ToolCall
-
 TokenCallback = Callable[[str], None]
 
 
@@ -54,6 +53,7 @@ class LocalModelClient:
     def complete(
         self,
         messages: list[dict[str, Any]],
+        temp: float, 
         tools: list[dict[str, Any]],
         *,
         stream: bool | None = None,
@@ -63,7 +63,7 @@ class LocalModelClient:
         payload: dict[str, Any] = {
             "model": self.settings.model,
             "messages": messages,
-            "temperature": 0,
+            "temperature": temp,
             "stream": should_stream,
             "max_tokens": self.settings.max_model_output_tokens,
             "chat_template_kwargs": {"enable_thinking": False},
